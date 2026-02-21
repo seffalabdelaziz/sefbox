@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  MEMBER
+}
+
+enum SessionStatus {
+  ACTIVE
+  CLOSED
+  ERROR
+}
+
+model User {
+  id             String              @id @default(cuid())
+  email          String
+  passwordHash   String
+  fullName       String?
+  role           UserRole            @default(MEMBER)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  workspaceId    String
+  workspace      Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessions       AgentSession[]
+  usageHistory   SkillUsageHistory[]
+
+  @@unique([workspaceId, email])
+  @@index([workspaceId, createdAt])
+}
+
+model Workspace {
+  id                 String               @id @default(cuid())
+  name               String
+  slug               String               @unique
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  users              User[]
+  skills             Skill[]
+  sessions           AgentSession[]
+  recommendationLogs RecommendationLog[]
+  usageHistory       SkillUsageHistory[]
+
+  @@index([createdAt])
+}
+
+model Skill {
+  id              String              @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name            String
+  slug            String
+  description     String              @db.Text
+  tags            Json
+  category        String
+  inputSchema     Json
+  outputSchema    Json
+  exampleUsage    String?             @db.Text
+  systemPrompt    String              @db.Text
+  sourceFilePath  String
+  checksum        String
+  isActive        Boolean             @default(true)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  embedding       SkillEmbedding?
+  usageHistory    SkillUsageHistory[]
+  recommendations RecommendationLog[]
+
+  @@unique([workspaceId, slug])
+  @@index([workspaceId, category])
+  @@index([workspaceId, isActive, updatedAt])
+  @@index([workspaceId, checksum])
+}
+
+model SkillEmbedding {
+  id           String   @id @default(cuid())
+  workspaceId  String
+  skillId      String   @unique
+  vector       Json
+  model        String
+  dimensions   Int
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  skill        Skill    @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, model])
+}
+
+model SkillUsageHistory {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessionId     String
+  session       AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  skillId       String
+  skill         Skill     @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  userMessage   String    @db.Text
+  response      String    @db.Text
+  confidence    Float
+  metadata      Json?
+  createdAt     DateTime  @default(now())
+
+  @@index([workspaceId, skillId, createdAt])
+  @@index([workspaceId, userId, createdAt])
+  @@index([sessionId, createdAt])
+}
+
+model AgentSession {
+  id                 String              @id @default(cuid())
+  workspaceId        String
+  workspace          Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId             String
+  user               User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String?
+  status             SessionStatus       @default(ACTIVE)
+  lastMessageAt      DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  usageHistory       SkillUsageHistory[]
+  recommendationLogs RecommendationLog[]
+
+  @@index([workspaceId, userId, updatedAt])
+  @@index([workspaceId, status, updatedAt])
+}
+
+model RecommendationLog {
+  id             String       @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sessionId      String
+  session        AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  skillId        String
+  skill          Skill        @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  rank           Int
+  score          Float
+  boostBreakdown Json
+  selected       Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([workspaceId, sessionId, createdAt])
+  @@index([workspaceId, skillId, createdAt])
+  @@index([sessionId, rank])
+}
